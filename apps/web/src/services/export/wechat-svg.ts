@@ -1053,7 +1053,53 @@ function clampFontSizeInStyle(style: string): string {
   })
 }
 
+
+function collectVisualLines(fo: Element): string[] {
+  if (!fo.isConnected)
+    return []
+
+  const root = fo.querySelector(`.nodeLabel`) ?? fo
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const lines: { top: number, text: string }[] = []
+  const range = document.createRange()
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    const value = node.textContent ?? ``
+    let offset = 0
+
+    for (const char of value) {
+      const nextOffset = offset + char.length
+      range.setStart(node, offset)
+      range.setEnd(node, nextOffset)
+      offset = nextOffset
+
+      const rect = range.getBoundingClientRect()
+      if (rect.width === 0 && rect.height === 0)
+        continue
+
+      let line = lines.find(item => Math.abs(item.top - rect.top) < 2)
+      if (!line) {
+        line = { top: rect.top, text: `` }
+        lines.push(line)
+      }
+
+      line.text += char
+    }
+  }
+
+  return lines
+    .sort((a, b) => a.top - b.top)
+    .map(line => line.text.replace(/\u00A0/g, ` `).trim())
+    .filter(Boolean)
+}
+
+
 function collectForeignObjectLines(fo: Element): string[] {
+  const visualLines = collectVisualLines(fo)
+  if (visualLines.length > 0)
+    return visualLines
+
   const html = fo.innerHTML
   if (/<br\s*\/?>/i.test(html)) {
     return html
@@ -1069,6 +1115,31 @@ function collectForeignObjectLines(fo: Element): string[] {
   const compact = text.replace(/\s+/g, ` `).trim()
   return compact ? [compact] : []
 }
+
+
+export function captureMermaidVisualLines(root: ParentNode): string[][] {
+  const result: string[][] = []
+
+  root.querySelectorAll(`svg foreignObject`).forEach((fo) => {
+    result.push(collectVisualLines(fo))
+  })
+
+  return result
+}
+
+export function applyMermaidVisualLines(
+  root: ParentNode,
+  linesByIndex: string[][],
+) {
+  root.querySelectorAll(`svg foreignObject`).forEach((fo, index) => {
+    const lines = linesByIndex[index]
+    if (!lines || lines.length === 0)
+      return
+
+    fo.setAttribute(`data-wechat-visual-lines`, JSON.stringify(lines))
+  })
+}
+
 
 function parseTranslate(transform: string | null): { x: number, y: number } | null {
   if (!transform)
@@ -1198,8 +1269,24 @@ function flattenMermaidHtmlLabels(svg: SVGSVGElement, mermaid = false) {
   if (!isMermaidDiagramSvg(svg, mermaid))
     return
 
-  svg.querySelectorAll(`foreignObject`).forEach((fo) => {
-    const lines = collectForeignObjectLines(fo)
+	svg.querySelectorAll(`foreignObject`).forEach((fo) => {
+	  const savedLines = fo.getAttribute(`data-wechat-visual-lines`)
+	  let lines: string[] | null = null
+
+	  if (savedLines) {
+		try {
+		  const parsed: unknown = JSON.parse(savedLines)
+		  if (
+			Array.isArray(parsed)
+			&& parsed.every(item => typeof item === `string`)
+		  ) {
+			lines = parsed
+		  }
+		}
+		catch {}
+	  }
+
+	  lines ??= collectForeignObjectLines(fo)
     if (lines.length === 0) {
       fo.remove()
       return
