@@ -43,10 +43,20 @@ export function normalizeMermaidEdgeLabels(svg: string): string {
 
     if (background) {
       const style = background.getAttribute(`style`) ?? ``
+
       background.setAttribute(
         `style`,
-        `${style}; box-sizing: border-box; width: 100%; padding: 0 ${padding}px;`,
+        `${style}; box-sizing: border-box; width: 100%; max-width: none; padding: 0 ${padding}px;`,
       )
+
+      // Avoid stacking semi-transparent backgrounds on nested label elements.
+      background.querySelectorAll(`.edgeLabel, p`).forEach((element) => {
+        const nestedStyle = element.getAttribute(`style`) ?? ``
+        element.setAttribute(
+          `style`,
+          `${nestedStyle}; background: transparent !important;`,
+        )
+      })
     }
   })
 

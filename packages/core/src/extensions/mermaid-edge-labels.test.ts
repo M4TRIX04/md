@@ -15,8 +15,12 @@ describe(`normalizeMermaidEdgeLabels`, () => {
           <g class="edgeLabel">
             <g class="label" transform="translate(-80, -24)">
               <foreignObject width="160" height="48">
-                <div class="labelBkg" style="background-color:#eee">
-                  Words or message
+                <div class="labelBkg" style="background-color:rgba(232,232,232,0.8)">
+                <span class="edgeLabel" style="background-color:rgba(232,232,232,0.8)">
+                    <p style="background-color:rgba(232,232,232,0.8)">
+                    Words or message
+                    </p>
+                </span>
                 </div>
               </foreignObject>
             </g>
@@ -34,6 +38,18 @@ describe(`normalizeMermaidEdgeLabels`, () => {
     expect(label?.getAttribute(`transform`)).toBe(`translate(-88, -24)`)
     expect(background?.getAttribute(`style`)).toContain(`padding: 0 8px`)
     expect(background?.getAttribute(`style`)).toContain(`box-sizing: border-box`)
+    expect(background).not.toBeNull()
+    expect(background?.getAttribute(`style`)).toContain(`max-width: none`)
+
+    const nested = background?.querySelectorAll(`.edgeLabel, p`) ?? []
+
+    expect(nested.length).toBeGreaterThan(0)
+
+    nested.forEach((element) => {
+      expect(element.getAttribute(`style`)).toContain(
+        `background: transparent !important`,
+      )
+    })
   })
 
   it(`does not change ordinary node labels`, () => {
