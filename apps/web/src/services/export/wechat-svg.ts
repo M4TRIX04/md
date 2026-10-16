@@ -1411,6 +1411,51 @@ function roundSvg(n: number): number {
 }
 
 /**
+ * Vertically center a single-line Mermaid edge label
+ * within its exported SVG backdrop.
+ *
+ * Keep the existing baseline if geometry cannot be measured.
+ */
+function centerMermaidEdgeLabelText(
+  text: SVGTextElement,
+  rect: SVGRectElement,
+): void {
+  if (!text.isConnected || !rect.isConnected)
+    return
+
+  try {
+    const textBox = text.getBBox()
+    const rectBox = rect.getBBox()
+
+    if (
+      !Number.isFinite(textBox.y)
+      || !Number.isFinite(textBox.height)
+      || !Number.isFinite(rectBox.y)
+      || !Number.isFinite(rectBox.height)
+      || textBox.height <= 0
+      || rectBox.height <= 0
+    ) {
+      return
+    }
+
+    const textCenter = textBox.y + textBox.height / 2
+    const rectCenter = rectBox.y + rectBox.height / 2
+    const offset = textCenter - rectCenter
+
+    const baseline = Number.parseFloat(text.getAttribute(`y`) ?? ``)
+
+    if (!Number.isFinite(baseline) || !Number.isFinite(offset))
+      return
+
+    text.setAttribute(`y`, String(baseline - offset))
+  }
+  catch {
+    // SVG measurement is not available in every rendering environment.
+    // Preserve the original baseline.
+  }
+}
+
+/**
  * WeChat drops / mis-paints HTML inside foreignObject (ER, requirement, flowchart).
  * Convert labels to real SVG text so fill and font-size survive paste.
  */
@@ -1525,6 +1570,12 @@ function flattenMermaidHtmlLabels(svg: SVGSVGElement, mermaid = false) {
     }
     replacement.appendChild(text)
     parent.replaceChild(replacement, fo)
+
+    if (needsBackdrop && lines.length === 1) {
+      const rect = replacement.querySelector(`rect`)
+      if (rect)
+        centerMermaidEdgeLabelText(text, rect)
+    }
   })
 
   separateOverlappingMermaidEdgeLabels(svg)

@@ -792,3 +792,143 @@ describe(`remapDiagramInkToCurrentColor`, () => {
     expect(path.getAttribute(`fill`)).toBe(`#ECECFF`)
   })
 })
+
+describe(`mermaid edge label vertical alignment`, () => {
+  const svgNS = `http://www.w3.org/2000/svg`
+
+  function createFixture() {
+    const wrapper = document.createElement(`div`)
+    wrapper.className = `mermaid-diagram`
+    wrapper.innerHTML = `
+      <svg viewBox="0 0 300 120" xmlns="${svgNS}">
+        <g class="edgeLabels">
+          <g class="edgeLabel" transform="translate(150, 60)">
+            <g class="label" transform="translate(-40, -12)">
+              <foreignObject width="80" height="24">
+                <div xmlns="http://www.w3.org/1999/xhtml"
+                  style="color:#333333;font-size:16px;text-align:center">
+                  <span><p>英语派生</p></span>
+                </div>
+              </foreignObject>
+            </g>
+          </g>
+        </g>
+      </svg>
+    `
+
+    document.body.appendChild(wrapper)
+
+    return {
+      wrapper,
+      svg: wrapper.querySelector(`svg`) as SVGSVGElement,
+    }
+  }
+
+  function mockGetBBox(
+    implementation: (element: SVGElement) => DOMRect,
+  ) {
+    const original = Object.getOwnPropertyDescriptor(
+      SVGElement.prototype,
+      `getBBox`,
+    )
+
+    Object.defineProperty(SVGElement.prototype, `getBBox`, {
+      configurable: true,
+      writable: true,
+      value(this: SVGElement) {
+        return implementation(this)
+      },
+    })
+
+    return () => {
+      if (original) {
+        Object.defineProperty(
+          SVGElement.prototype,
+          `getBBox`,
+          original,
+        )
+      }
+      else {
+        Reflect.deleteProperty(SVGElement.prototype, `getBBox`)
+      }
+    }
+  }
+
+  it(`centers single-line labels using measured SVG bounds`, () => {
+    const { wrapper, svg } = createFixture()
+
+    const restore = mockGetBBox((element) => {
+      if (element.localName === `text`) {
+        const baseline = Number(element.getAttribute(`y`))
+
+        return {
+          x: 0,
+          y: baseline - 14.857,
+          width: 64,
+          height: 18.286,
+        } as DOMRect
+      }
+
+      if (element.localName === `rect`) {
+        return {
+          x: 0,
+          y: Number(element.getAttribute(`y`)),
+          width: Number(element.getAttribute(`width`)),
+          height: Number(element.getAttribute(`height`)),
+        } as DOMRect
+      }
+
+      throw new Error(`Unexpected getBBox target`)
+    })
+
+    try {
+      sanitizeSvgForWeChat(svg)
+
+      const text = Array.from(svg.querySelectorAll(`text`))
+        .find(el => el.textContent?.trim() === `英语派生`)
+      const rect = svg.querySelector(`rect`)
+
+      expect(text).toBeDefined()
+      expect(rect).not.toBeNull()
+
+      const baseline = Number(text?.getAttribute(`y`))
+
+      // Original baseline 16; measured correction +1.714.
+      expect(baseline).toBeCloseTo(17.714, 2)
+
+      // The backdrop geometry must remain unchanged.
+      expect(Number(rect?.getAttribute(`y`))).toBe(-4)
+      expect(Number(rect?.getAttribute(`height`))).toBe(32)
+
+      expect(svg.querySelector(`foreignObject`)).toBeNull()
+    }
+    finally {
+      restore()
+      wrapper.remove()
+    }
+  })
+
+  it(`preserves the baseline when SVG measurement throws`, () => {
+    const { wrapper, svg } = createFixture()
+
+    const restore = mockGetBBox(() => {
+      throw new Error(`SVG measurement unavailable`)
+    })
+
+    try {
+      expect(() => sanitizeSvgForWeChat(svg)).not.toThrow()
+
+      const text = Array.from(svg.querySelectorAll(`text`))
+        .find(el => el.textContent?.trim() === `英语派生`)
+
+      expect(text).toBeDefined()
+      expect(Number(text?.getAttribute(`y`))).toBe(16)
+      expect(svg.querySelector(`foreignObject`)).toBeNull()
+      expect(svg.querySelector(`rect`)).not.toBeNull()
+    }
+    finally {
+      restore()
+      wrapper.remove()
+    }
+  })
+})
